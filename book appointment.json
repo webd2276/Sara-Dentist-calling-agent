@@ -1,0 +1,439 @@
+{
+  "name": "book appointment",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "book-appointment",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "2743ed3e-1682-45b2-9f0a-fa7fc4ad0cd6",
+      "name": "Webhook: book-appointment",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        80
+      ],
+      "webhookId": "5accf431-d801-4f37-b226-75cd664243ea"
+    },
+    {
+      "parameters": {
+        "jsCode": "const toolCall = $input.first().json.body.message.toolCalls[0];\nconst args = toolCall.function['arguments'];\n\nconst startDateTime = new Date(`${args.date}T${args.time}:00`);\nconst endDateTime = new Date(startDateTime.getTime() + 30 * 60000);\nconst pad = n => String(n).padStart(2, '0');\nconst endTime = `${pad(endDateTime.getHours())}:${pad(endDateTime.getMinutes())}`;\n\nconst emailRegex = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\nconst rawEmail = (args.email || \"\").toString().trim();\nconst validEmail = emailRegex.test(rawEmail) ? rawEmail : null;\n\n// Normalize phone for WATI: full international format, digits only, no '+', no leading 0.\nconst DEFAULT_COUNTRY_CODE = \"92\"; // Pakistan\nlet whatsappNumber = (args.phone_number || \"\").toString().replace(/\\D/g, \"\");\nif (whatsappNumber.startsWith(\"00\")) {\n  // 00 international prefix -> drop it\n  whatsappNumber = whatsappNumber.slice(2);\n} else if (whatsappNumber.startsWith(\"0\")) {\n  // Local format with trunk 0 -> replace with country code\n  whatsappNumber = DEFAULT_COUNTRY_CODE + whatsappNumber.slice(1);\n} else if (!whatsappNumber.startsWith(DEFAULT_COUNTRY_CODE)) {\n  // Bare local number without trunk 0 or country code -> prepend country code\n  whatsappNumber = DEFAULT_COUNTRY_CODE + whatsappNumber;\n}\nconst hasValidPhone = whatsappNumber.length >= 11;\n\nreturn [{\n  json: {\n    toolCallId: toolCall.id,\n    patient_name: args.patient_name,\n    phone_number: args.phone_number,\n    whatsapp_number: whatsappNumber,\n    has_valid_phone: hasValidPhone,\n    service_type: args.service_type,\n    date: args.date,\n    time: args.time,\n    end_time: endTime,\n    email: validEmail,\n    has_valid_email: validEmail !== null\n  }\n}];"
+      },
+      "id": "8739c617-4e11-406f-8f0b-f95a45fff7ca",
+      "name": "Extract Args",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "value": "4738b4b306ba3e16c1b5b52253a61426394a3ef0b03d68f1881bcdb885c07d4d@group.calendar.google.com",
+          "mode": "id"
+        },
+        "start": "={{ $json.date }}T{{ $json.time }}:00",
+        "end": "={{ $json.date }}T{{ $json.end_time }}:00",
+        "additionalFields": {
+          "description": "=Phone: {{ $json.phone_number }} | Email: {{ $json.email }}",
+          "summary": "={{ $json.service_type }} - {{ $json.patient_name }}"
+        }
+      },
+      "id": "54572d74-16fe-4126-9b47-8fbbaca38a78",
+      "name": "Google Calendar: Create Event",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.2,
+      "position": [
+        448,
+        80
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "OmSuq4KaOjjovI0I",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1SOGjWEe0kaMEupPzA0iFTXhw-J7B4JwCcwAZoSScTQA",
+          "mode": "list",
+          "cachedResultName": "Bookings",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1SOGjWEe0kaMEupPzA0iFTXhw-J7B4JwCcwAZoSScTQA/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1SOGjWEe0kaMEupPzA0iFTXhw-J7B4JwCcwAZoSScTQA/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Timestamp": "={{ $now }}",
+            "Patient_name": "={{ $('Extract Args').first().json.patient_name }}",
+            "Phone": "={{ $('Extract Args').first().json.phone_number }}",
+            "Service": "={{ $('Extract Args').first().json.service_type }}",
+            "Date": "={{ $('Extract Args').first().json.date }}",
+            "Time": "={{ $('Extract Args').first().json.time }}",
+            "Stastus": "booked",
+            " email": "={{ $('Extract Args').first().json.email }}",
+            " event id": "={{$json.id}}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Timestamp",
+              "displayName": "Timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Patient_name",
+              "displayName": "Patient_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Phone",
+              "displayName": "Phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Service",
+              "displayName": "Service",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Time",
+              "displayName": "Time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Stastus",
+              "displayName": "Stastus",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": " email",
+              "displayName": " email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": " event id",
+              "displayName": " event id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "306f1c3d-7fac-4d97-84c5-74657b12ae41",
+      "name": "Google Sheets: Log Booking",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        672,
+        80
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "oq6Bb7dnzLSfFm5s",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "ba9949e7-a180-452d-ab85-7c78f8f53d57",
+              "leftValue": "={{ $('Extract Args').first().json.has_valid_email }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e4b2b410-cdf0-4cad-8872-208818c93c6c",
+      "name": "Has Email",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        896,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Extract Args').first().json.email }}",
+        "subject": "Appointment Confirmed - Sarah Dental Clinic",
+        "message": "=<p>Dear {{ $('Extract Args').first().json.patient_name }},</p> <p>Your appointment at Sarah Dental Clinic is confirmed:</p> <p><strong>Service:</strong> {{ $('Extract Args').first().json.service_type }}<br> <strong>Date:</strong> {{ $('Extract Args').first().json.date }}<br> <strong>Time:</strong> {{ $('Extract Args').first().json.time }}</p> <p>See you soon!</p>",
+        "options": {}
+      },
+      "id": "afad7af3-117f-4ac8-a402-0795b459c5b5",
+      "name": "Send a message",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1120,
+        0
+      ],
+      "webhookId": "9b4a020e-5e2b-43b7-80bb-92fd3bea14b5",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "Epdhsraixn7mmVJB",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "3257030790@c.us",
+        "quotedMessageId": "3EB098FC91C40A3CB66F63",
+        "message": "=Hi {{ $('Extract Args').first().json.patient_name }}! Your appointment at Sarah Dental Clinic is confirmed: Service: {{ $('Extract Args').first().json.service_type }} Date: {{ $('Extract Args').first().json.date }} Time: {{ $('Extract Args').first().json.time }}"
+      },
+      "id": "26c8c0aa-791c-4f34-8db5-925161a22f0e",
+      "name": "Send message",
+      "type": "@green-api/n8n-nodes-whatsapp-greenapi.greenapi",
+      "typeVersion": 1,
+      "position": [
+        1344,
+        80
+      ],
+      "credentials": {
+        "greenApiAuthApi": {
+          "id": "ofFxyGizEmRjpYKa",
+          "name": "Green-API account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sarah-dental-clinic-crm.netlify.app/api/webhooks/n8n-sync",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Webhook-Secret",
+              "value": "sara_dental_crm_secret_2026"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n     \"action\": \"created\",\n     \"patient_name\": \"{{ $('Extract Args').first().json.patient_name }}\",\n     \"phone_number\": \"{{ $('Extract Args').first().json.phone_number }}\",\n     \"email\": \"{{ $('Extract Args').first().json.email }}\",\n     \"service_type\": \"{{ $('Extract Args').first().json.service_type }}\",\n     \"date\": \"{{ $('Extract Args').first().json.date }}\",\n     \"time\": \"{{ $('Extract Args').first().json.time }}\"\n   }",
+        "options": {}
+      },
+      "id": "cec3c90a-e9a3-417f-bceb-0c1b0b75f11d",
+      "name": "book oppoinment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1568,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"results\": [ { \"toolCallId\": $('Extract Args').first().json.toolCallId, \"result\": \"Appointment booked successfully for \" + $('Extract Args').first().json.patient_name + \" on \" + $('Extract Args').first().json.date + \" at \" + $('Extract Args').first().json.time + \".\" } ] } }}",
+        "options": {}
+      },
+      "id": "c7f6b4d6-5368-4050-8c4e-85b96d1eb59e",
+      "name": "Respond: Booking Confirmed",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1792,
+        80
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook: book-appointment": {
+      "main": [
+        [
+          {
+            "node": "Extract Args",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Args": {
+      "main": [
+        [
+          {
+            "node": "Google Calendar: Create Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Calendar: Create Event": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets: Log Booking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets: Log Booking": {
+      "main": [
+        [
+          {
+            "node": "Has Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Email": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a message": {
+      "main": [
+        [
+          {
+            "node": "Send message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send message": {
+      "main": [
+        [
+          {
+            "node": "book oppoinment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "book oppoinment": {
+      "main": [
+        [
+          {
+            "node": "Respond: Booking Confirmed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true
+  },
+  "versionId": "a7c2ae19-ac14-4ac4-8a98-abfc63da302d",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "1ecf7c16de28e9cb51afa73998847b7e3ce52dec276fe111f4fa9de3fbab0e5b"
+  },
+  "nodeGroups": [],
+  "id": "xz1Fszp6rDkp4dTK",
+  "tags": []
+}
